@@ -1,0 +1,17 @@
+-- Data Memory Initialization File
+-- Assembled by njk4401_asm on Sat Sep 26 09:00:04 2026
+
+WIDTH = 16;
+DEPTH = 65536;
+
+ADDRESS_RADIX = HEX;
+DATA_RADIX = BIN;
+
+CONTENT BEGIN
+  -- Source File: "unit_test"
+  0000 : 0000000000000100; % .word singleOne, 0b000000000000100 %
+  0001 : 0111011111111111; % .word singleZero, 0b111011111111111 %
+  0002 : 0011111111111111; % .word big, 0b011111111111111 %
+  [0003..0FFF] : 0;
+  [1000..FFFF] : 0;
+END;

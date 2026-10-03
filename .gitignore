@@ -1,0 +1,17 @@
+# Backups
+*.bak*
+
+# Quartus files
+*.q*
+*.rpt
+*.ver
+db/
+greybox_temp/
+incremental_db/
+output_files/
+
+# Modelsim files
+*_transcript
+wlft*
+*.wlf
+rtl_work/

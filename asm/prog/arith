@@ -1,0 +1,29 @@
+; njkRISC
+.directives
+    .equ    eof, 0x7FFF
+.end
+
+.code
+    addc    R1, 0x10  ; R1 <= 16; R2 <= 0
+    subc    R2, 0x04  ; R1 <= 16; R2 <= -4
+    sub     R1, R2    ; R1 <= 20; R2 <= -4
+    add     R1, R2    ; R1 <= 16; R2 <= -4
+    mul     R1, R2    ; R1 <= -1; R2 <= -64
+    addc    R1, 0x11  ; R1 <= 16; R2 <= -64
+    div     R1, R2    ; R1 <= 0;  R2 <= 4
+    addc    R1, 1
+    addc    R1, 2
+    addc    R1, 3
+    addc    R1, 4
+    addc    R1, 5
+    addc    R1, 1
+    addc    R1, 7
+    addc    R1, 8
+    addc    R1, 9
+    addc    R1, 10
+    jmp     #here
+    mul     R1, R2
+here:
+    addc    R1, 11
+    jmp     #eof
+.end

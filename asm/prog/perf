@@ -1,0 +1,176 @@
+; njkRISC
+;==============================================================================
+; 1. Set the DIP switches to a number between 0-15.
+; 2. Push the debounced push button mapped to your Memory-Mapped LD instruction
+; 3. Upon seeing this press, read in the number and load it into memory.
+; 4. Wait for the button to be de-pressed and then repeat
+; 5. Read in two 4x4 matrices in this manner.
+; 6. Multiply the two matrices.
+; 7. Benchmark performance of the multiplication.
+; 8. Display product matrix elements serially on output LEDs.
+;==============================================================================
+.data
+    ; 4x4 matrices
+    .alloc  matrix1, 16
+    .alloc  matrix2, 16
+    .alloc  product, 16
+.end
+
+.directives
+    .equ    eof, 0xFFFF
+
+    .equ    matrices, matrix1
+
+    .equ    input, R1    ; Input peripherals - {Switch[3:0], PB}
+    .equ    PB_mask, R2  ; Mask for isolating push button from input
+    .equ    total, R3    ; Total number of elements which need to be read
+    .equ    index, R4    ; Current index into the matrices
+
+    ; I-O Mappings
+    .equ    FPGA_inputs, 0x0FFF
+    .equ    FPGA_LEDs, 0x0FFF
+    .equ    Perf_CNT, 0x0FFE
+    .equ    Perf_RST, 0x0FFE
+.end
+
+.code
+init:
+    xor     PB_mask, PB_mask
+    addc    PB_mask, 1  ; Push button is LSb of the input
+    xor     index, index
+    xor     total, total
+    addc    total, 1
+    rotl    total, 5
+;------------------------------------------------------------------------------
+; Wait for the push button to be pressed
+;------------------------------------------------------------------------------
+scan_pb_pressed:
+    ; Load input peripherals into register
+    ld      input, #FPGA_inputs
+    cpy     R0, input
+    and     R0, PB_mask
+    ; If button not pressed (active low) scan again
+    jnz     #scan_pb_pressed
+;------------------------------------------------------------------------------
+; Once the button has been pressed, store the number represented
+; by the four DIP switches into memory
+;------------------------------------------------------------------------------
+store_value:
+    shrl    input, 1  ; Shift combined switch value down
+    st      input, matrices[index]
+    addc    index, 1
+
+    cpy     R0, index
+    sub     R0, total
+    jl      #scan_pb_depressed
+    call    #mult
+    call    #display
+    call    #flush_cache
+    jmp     #eof  ; signal to test bench program has ended
+;------------------------------------------------------------------------------
+; Wait for the push button to be depressed
+;------------------------------------------------------------------------------
+scan_pb_depressed:
+    ; Load input peripherals into register
+    ld      input, #FPGA_inputs
+    ; Rotate the push button (LSb) into the V status bit
+    rrv     input, 1
+    ; If button pressed (active low) scan again
+    jnv     #scan_pb_depressed
+    jmp     #scan_pb_pressed
+.end
+
+;------------------------------------------------------------------------------
+; Multiply both matrices that were read
+;------------------------------------------------------------------------------
+.directives
+    .equ    m1_elem, R1
+    .equ    m2_elem, R2
+    .equ    prod_elem, R3
+    .equ    index1, R4
+    .equ    index2, R5
+    .equ    prod_index, R6
+    .equ    offset, R7
+    .equ    two_lsb, R8
+    .equ    performance, R9
+.end
+.code
+mult:
+    xor     prod_index, prod_index
+    xor     two_lsb, two_lsb
+    addc    two_lsb, 0x3
+
+    ; Start the performance counter
+    st      two_lsb, #Perf_RST
+    next_elem:
+        xor     prod_elem, prod_elem
+        xor     index1, index1
+        xor     index2, index2
+        cpy     offset, prod_index
+        add     index2, offset
+        and     index2, two_lsb
+        shrl    offset, 2
+        add     index1, offset
+        rotl    index1, 2
+    mult_loop:
+        ld      m1_elem, matrix1[index1]
+        ld      m2_elem, matrix2[index2]
+        mul     m1_elem, m2_elem
+        add     prod_elem, m2_elem
+        addc    index1, 1  ; Move right by one column in matrix 1
+        addc    index2, 4  ; Move down by one row in matrix 2
+
+        ; If not at end of matrix1 row, continue accumulating
+        cpy     R0, index1
+        and     R0, two_lsb
+        jnz     #mult_loop
+
+    ; Store accumulated element into memory
+    st      prod_elem, product[prod_index]
+
+    addc    prod_index, 1
+    cpy     R0, prod_index
+    subc    R0, 16
+    jne     #next_elem
+
+    ; Save the performance count value and reset
+    ld      performance, #Perf_CNT
+    st      m1_elem, #Perf_RST  ; M1_elem guaranteed 0 after MUL
+    ret
+.end
+
+;------------------------------------------------------------------------------
+; Display product matrix serially on output LEDs
+;------------------------------------------------------------------------------
+.code
+display:
+    xor     prod_index, prod_index
+    display_loop:
+        ld      prod_elem, product[prod_index]
+        st      prod_elem, #FPGA_LEDs
+        addc    prod_index, 1
+        cpy     R0, prod_index
+        subc    R0, 16
+        jne     #display_loop
+    ret
+.end
+
+;------------------------------------------------------------------------------
+; Flush the contents of the cache
+;------------------------------------------------------------------------------
+.directives
+    .equ    buffer, R31
+    .equ    blocks, R30
+.end
+.code
+flush_cache:
+    xor     buffer, buffer
+    xor     blocks, blocks
+    addc    blocks, 17
+    flush_loop:
+        ld      R0, 0x100[buffer]
+        addc    buffer, 30
+        subc    blocks, 1
+        jnz     #flush_loop
+    ret
+.end

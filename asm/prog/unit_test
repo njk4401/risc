@@ -1,0 +1,97 @@
+; njkRISC test program
+.directives
+    .equ    eof, 0x7FFF
+.end
+
+.directives
+    .equ    index, R7
+    .equ    r1_init, 24
+    .equ    r2_init, 18
+    .equ    r3_init,  1
+    .equ    test, cycles[index]
+.end
+
+.constants
+    .word   singleOne,  0b000000000000100
+    .word   singleZero, 0b111011111111111
+    .word   big, 0b011111111111111
+.end
+
+.data
+    .alloc  temp, 1
+    .alloc  cycles, 2
+.end
+
+.code
+main:   ; Initialize Registers
+        XOR     R1, R1
+        XOR     R2, R2
+        XOR     R3, R3
+        XOR     R4, R4
+        ADDC    R1, r1_init
+        ADDC    R2, r2_init
+        ADDC    R3, r3_init
+
+        ; Immediate Addressing
+        ST      R2, #temp
+        LD      R4, #temp
+        ; PC-Rel Addressing
+        ST      R1, &20
+        LD      R4, &18  ; Since PC increments twice between these instructions
+        ; SP-Rel Addressing
+        ST      R2, $0x20
+        LD      R4, $0x20
+        ; Indexed Addressing
+        ST      R1, temp[R3]
+        LD      R4, 0b10[R3]  ; temp allocated to location 2
+        ; I/O (Reference end of memory)
+        LD      R1, #0x7FFF
+        ST      R2, #0x7FFF
+
+        ; Test c and z jumps
+        CALL    #jmps
+
+        ; Test other jumps
+        SUB     R1, R1
+        SUB     R2, R2
+        ADDC    R1, 20
+        ADDC    R2, 18
+        SUB     R2, R1
+        JN      #skip4
+        MUL     R2, R1
+skip4:  SUB     R1, R1
+        JNN     #skip5
+        MUL     R2, R1
+skip5:  LD      R1, #big
+        ADDC    R1, 2
+        JV      #skip6
+        MUL     R2, R1
+skip6:  SUB     R1, R1
+        JNV     #main
+        MUL     R1, R2
+
+        jmp     #eof  ; signal to testbench that program ended
+
+jmps:
+        JMP     #skip1  ; Unconditional
+        MUL     R1, R2  ; Should skip over
+skip1:  LD      R5, #singleOne
+        SUB     R6, R6
+        SUB     index, index
+nzj:    ADDC    R6, 1  ; Count the number of cycles
+        SHRL    R5, 1
+        JNZ     #nzj   ; Should fall through once the leading one shifts out
+        JZ      #skip2
+        MUL     R1, R2  ; Should skip over
+skip2:  ST      R6, cycles[R7]
+        ADDC    index, 1  ; Point to next location
+        LD      R5, #singleZero
+        SUB     R6, R6
+cj:     ADDC    R6, 1  ; Count the number of cycles
+        RLC     R5, 1
+        JC      #cj    ; Should fall through once the trailing 0 rotates into C
+        JNC     #skip3
+        MUL     R1, R2  ; Should skip over
+skip3:  ST      R6, test
+        RET
+.end

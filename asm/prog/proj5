@@ -1,0 +1,142 @@
+; njkRISC
+.directives
+    .equ    img_index,    R4
+    .equ    pixel_index,  R5
+    .equ    input_index,  R6
+    .equ    hidden_index, R7
+    .equ    output_index, R8
+    .equ    accumulator,  R9
+    .equ    prediction,   R10
+    .equ    per_image,    R28
+    .equ    num_outputs,  R29
+    .equ    num_hidden,   R30
+    .equ    num_inputs,   R31
+    .equ    DIGIT_IS,     0xFFFF  ; Output peripheral to display the digit
+    .equ    PERF_RST,     0xFFFE  ; Output peripheral to reset perf counter
+    .equ    PERF_CNT_u,   0xFFFF  ; Output peripheral displaying perf counter
+    .equ    PERF_CNT_l,   0xFFFE
+.end
+
+.data
+    .alloc  IMAGES,    0x4000  ; 16 784-pixel test images
+    .alloc  H_WEIGHTS, 0x5BE0  ; Weights for hidden layer, 784 inputs each
+    .alloc  O_WEIGHTS, 300     ; Weights for output layer, 30 inputs each
+    .alloc  H_BIASES,  30      ; Biases for hidden layer
+    .alloc  O_BIASES,  10      ; Biases for output layer
+    .alloc  HIDDEN,    30      ; Outputs of hidden layer
+    .alloc  OUTPUT,    10      ; Outputs of output layer
+.end
+
+.code
+    ;--------------------------------------------------------------------------
+    ; Establish Constants
+    ;--------------------------------------------------------------------------
+    ; num_inputs = 784 (0011_1000_0000)
+    addc    num_inputs, 0b11     ; 0000_0000_0011
+    st      num_inputs, #PERF_RST  ; Start performance counter in the meantime
+    rotl    num_inputs, 8        ; 0011_0000_0000
+    addc    num_inputs, 0b10000  ; 0011_0001_0000
+
+    ; num_hidden = 30
+    addc    num_hidden, 30
+
+    ; num_outputs = 10
+    addc    num_outputs, 10
+
+    ; per_image = 1024 (0100_0000_0000)
+    addc    per_image, 0b1000  ; 0000_0000_1000
+    rotl    per_image, 7       ; 0100_0000_1000
+
+    ;--------------------------------------------------------------------------
+    ; Loop through each image
+    ;--------------------------------------------------------------------------
+    .for(img_index=0, img_index<16, img_index+1)
+        ; pixel_index = image_index*1024
+        cpy     pixel_index, img_index
+        cpy     R0, per_image
+        mul     R0, pixel_index
+
+        ;----------------------------------------------------------------------
+        ; Hidden Layer
+        ;----------------------------------------------------------------------
+        .for(hidden_index=0, hidden_index<num_hidden, hidden_index+1)
+            xor     accumulator, accumulator
+
+            .for(input_index=0, input_index<num_inputs, input_index+1)
+                ; Load value of pixel
+                cpy     R11, pixel_index
+                add     R11, input_index
+                ld      R1, IMAGES[R11]  ; R1 = pixel
+
+                ; Compute weight address and load value
+                cpy     R0, input_index
+                cpy     R12, num_hidden
+                mul     R0, R12
+                add     R12, hidden_index
+                ld      R2, H_WEIGHTS[R12]  ; R2 = weight
+
+                ; Multiply and accumulate
+                mul     R1, R2
+                add     accumulator, R2
+            .endfor
+
+            ; Add bias and save
+            ld      R1, H_BIASES[hidden_index]
+            add     accumulator, R1
+            st      accumulator, HIDDEN[hidden_index]
+        .endfor
+
+        xor     R0, R0  ; An instruction is needed after a jump label
+
+        ;----------------------------------------------------------------------
+        ; Output Layer
+        ;----------------------------------------------------------------------
+        .for(output_index=0, output_index<num_outputs, output_index+1)
+            xor     accumulator, accumulator
+
+            .for(hidden_index=0, hidden_index<num_hidden, hidden_index+1)
+                ; Load hidden value
+                ld      R1, HIDDEN[hidden_index]
+
+                ; Compute weight address and load value
+                cpy     R0, hidden_index
+                cpy     R12, num_outputs
+                mul     R0, R12
+                add     R12, output_index
+                ld      R2, O_WEIGHTS[R12]  ; R2 = weight
+
+                ; Multiply and accumulate
+                mul     R1, R2
+                add     accumulator, R2
+            .endfor
+
+            ; Add bias and save
+            ld      R1, O_BIASES[output_index]
+            add     accumulator, R1
+            st      accumulator, OUTPUT[output_index]
+        .endfor
+
+        ;----------------------------------------------------------------------
+        ; Figure out the recognized digit
+        ;----------------------------------------------------------------------
+        xor     prediction, prediction  ; Clearing defaults the prediction to 0
+        ld      R1, #OUTPUT
+        .for(output_index=1, output_index<10, output_index+1)
+            ld      R2, OUTPUT[output_index]
+            cmp     R2, R1
+            jl      #not_max
+            cpy     R1, R2
+            ; Index of the output is the recognized digit
+            cpy     prediction, output_index
+not_max:
+            ; The assembler currently requires an instruction after a label
+            xor     R0, R0
+        .endfor
+
+        st      prediction, #DIGIT_IS  ; Write predicted digit to peripheral
+        ld      R27, #PERF_CNT_u  ; Save performance counter value (32-bits)
+        ld      R26, #PERF_CNT_l
+    .endfor
+
+    xor     R0, R0  ; An instruction is needed after a label
+.end
