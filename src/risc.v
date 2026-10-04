@@ -42,10 +42,6 @@ reg [15:0] rf[0:RF_SIZE];         // Register File
 reg [15:0] pc;                    // Program Counter
 reg [15:0] sp;                    // Stack Pointer
 reg  [3:0] sr;                    // Status Register
-reg [15:0] shadow_rf[0:RF_SIZE];  // Shadow Register File
-reg [15:0] shadow_pc;             // Shadow Program Counter
-reg [15:0] shadow_sp;             // Shadow Stack Pointer
-reg  [3:0] shadow_sr;             // Shadow Status Register
 
 reg [15:0] ma_base;    // Base Memory Address
 reg [15:0] ma_offset;  // Memory Address Offset
@@ -234,7 +230,7 @@ always @(posedge clk) begin: cpu
 
         `OP_CALL: begin
           ma_eff = ma_base + ma_offset;
-          mm_in = {12'b0, SR};
+          mm_in = {12'b0, sr};
           sp = sp - 1'b1;
         end
 
